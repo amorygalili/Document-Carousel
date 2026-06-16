@@ -1,0 +1,234 @@
+/* ── Carousel root ─────────────────────────────────────────── */
+.carousel-root {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem 1rem 1.5rem;
+  font-family: system-ui, -apple-system, sans-serif;
+  max-width: 640px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+.carousel-header {
+  text-align: center;
+}
+
+.carousel-title {
+  margin: 0 0 0.25rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.carousel-subtitle {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #666;
+  min-height: 1.2em;
+}
+
+/* ── Carousel row (arrows + cards) ──────────────────────────── */
+.carousel-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+/* ── Nav arrows ─────────────────────────────────────────────── */
+.nav-btn {
+  flex-shrink: 0;
+  width: 2.25rem;
+  border: 1px solid #d0d0d0;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: #444;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+  padding: 0;
+  align-self: center;
+  aspect-ratio: 1;
+}
+
+.nav-btn:hover:not(:disabled) {
+  background: #f0f0f0;
+  border-color: #999;
+}
+
+.nav-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* ── Cards container ────────────────────────────────────────── */
+.cards-container {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+/* ── Document card ──────────────────────────────────────────── */
+.doc-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.75rem 0.5rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 10px;
+  background: #fafafa;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+  font-size: 0.8rem;
+  min-height: 90px;
+  font-family: inherit;
+}
+
+.doc-card:hover:not(.doc-card--empty) {
+  border-color: #5b8dee;
+  background: #f0f5ff;
+  transform: translateY(-2px);
+}
+
+.doc-card--selected {
+  border-color: #4a7cf6;
+  background: #ebf1ff;
+}
+
+.doc-card--empty {
+  border-color: transparent;
+  background: transparent;
+  cursor: default;
+  pointer-events: none;
+}
+
+.doc-card__check {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.45rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  background: #4a7cf6;
+  color: #fff;
+  border-radius: 50%;
+  font-size: 0.65rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+
+.doc-card__icon {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.doc-card__name {
+  font-weight: 600;
+  color: #222;
+  word-break: break-word;
+  line-height: 1.25;
+}
+
+.doc-card__desc {
+  color: #777;
+  font-size: 0.72rem;
+  word-break: break-word;
+  line-height: 1.2;
+}
+
+.doc-card__type {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #4a7cf6;
+  background: #e8eeff;
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+  margin-top: auto;
+}
+
+/* ── Pagination dots ────────────────────────────────────────── */
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.pagination__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #ccc;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+
+.pagination__dot--active {
+  background: #4a7cf6;
+  transform: scale(1.25);
+}
+
+/* ── Submit button ──────────────────────────────────────────── */
+.submit-btn {
+  align-self: center;
+  padding: 0.6rem 1.8rem;
+  background: #4a7cf6;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  font-family: inherit;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background: #3668e8;
+}
+
+.submit-btn:disabled {
+  background: #bbb;
+  cursor: default;
+}
+
+/* ── Submitted state ────────────────────────────────────────── */
+.submitted {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2rem 1rem;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.submitted__icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: #4a7cf6;
+  color: #fff;
+  font-size: 1.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.submitted__text {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #444;
+}
