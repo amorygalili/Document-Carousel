@@ -1,0 +1,21 @@
+{
+  "homepage": "https://github.com/modelcontextprotocol/ext-apps/tree/main/examples/open-webui-loader",
+  "name": "@modelcontextprotocol/ext-apps-open-webui-loader",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "watch": "vite build --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.0.0"
+  }
+}

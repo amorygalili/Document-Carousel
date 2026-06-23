@@ -1,0 +1,55 @@
+# Open WebUI + MCP App Bridge host loader.
+#
+# Equivalent of the original `docker run`, with the parent-window bridge
+# (examples/open-webui-loader) bind-mounted read-only over Open WebUI's
+# placeholder at /app/backend/open_webui/static/loader.js (served at
+# /static/loader.js). This is what answers the App's ui/initialize handshake.
+#
+# Prerequisites (the host file MUST exist before `up`, otherwise Docker
+# creates a *directory* at the mount target):
+#   1. Build the loader once (in the ext-apps repo):
+#        npm run --workspace examples/open-webui-loader build
+#   2. Ensure LOADER_JS below points at the produced dist/loader.js.
+#
+# Usage:
+#   docker compose up -d
+#   # after rebuilding loader.js:
+#   docker compose restart open-webui
+#
+# Then set the MCP App Bridge tool valve `host_bridge = true`
+# (and `browser_mcp_url` for live in-app tool calls).
+
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:cuda
+    container_name: open-webui
+    restart: always
+    ports:
+      - "3000:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # --gpus all  (needs Docker Compose v2.30+). For older Compose, delete this
+    # line and use the `deploy:` block at the bottom of this service instead.
+    gpus: all
+    volumes:
+      # Existing data volume (chats, settings, tool valves) — reused as-is.
+      - open-webui:/app/backend/data
+      # Host bridge. Path is resolved relative to this compose file; override
+      # via a .env file (LOADER_JS=...) or an env var if your layout differs.
+      - "${LOADER_JS:-./open-webui-loader/dist/loader.js}:/app/backend/open_webui/static/loader.js:ro"
+
+    # ---- Older Docker Compose GPU fallback (remove `gpus: all` above first) ----
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  # Reuse the pre-existing named volume created by your `docker run` so no data
+  # is lost. `external: true` requires it to already exist (it does).
+  open-webui:
+    external: true
+    name: open-webui
