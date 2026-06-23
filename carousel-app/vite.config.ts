@@ -14,9 +14,11 @@ export default defineConfig({
     }),
   ],
   server: {
-    host: true
+    host: true,
+    cors: { origin: '*' }
   },
   preview: {
-    allowedHosts: ['host.docker.internal']
+    allowedHosts: ['host.docker.internal'],
+    cors: { origin: '*' }
   }
 })

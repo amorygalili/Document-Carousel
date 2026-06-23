@@ -86,6 +86,7 @@ def main() -> None:
         base_url=args.embeddings_base_url,
         api_key=args.embeddings_api_key,
         model=args.embeddings_model,
+        check_embedding_ctx_length=False,
     )
 
     try:

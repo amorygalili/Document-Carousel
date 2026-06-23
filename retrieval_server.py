@@ -35,6 +35,7 @@ def retrieve(req: RetrieveRequest) -> list[dict]:
             base_url=req.embeddings_base_url,
             api_key=req.embeddings_api_key,
             model=req.embeddings_model,
+            check_embedding_ctx_length=False,
         )
 
         vector_store = QdrantVectorStore.from_existing_collection(
