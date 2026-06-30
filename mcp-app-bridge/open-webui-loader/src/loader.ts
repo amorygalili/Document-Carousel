@@ -87,20 +87,94 @@ function messageText(content: unknown): string {
     .trim();
 }
 
+/** Flatten an `ui/update-model-context` payload (text blocks + structured) to text. */
+function extractContextText(params: unknown): string {
+  const p = (params ?? {}) as {
+    content?: unknown;
+    structuredContent?: unknown;
+  };
+  const parts: string[] = [];
+  const text = messageText(p.content);
+  if (text) parts.push(text);
+  if (
+    p.structuredContent &&
+    typeof p.structuredContent === "object" &&
+    Object.keys(p.structuredContent as object).length > 0
+  ) {
+    try {
+      parts.push(JSON.stringify(p.structuredContent));
+    } catch {
+      /* non-serializable: skip */
+    }
+  }
+  return parts.join("\n\n").trim();
+}
+
+/** localStorage queue key drained by the Open WebUI resource-context filter. */
+const RESOURCE_QUEUE_KEY = "mcp-app-bridge:resource-queue";
+
 /**
- * Inject text into Open WebUI's chat composer and submit it, so an app's
- * `app.sendMessage(...)` appears as a real user turn. `#chat-input` is the
- * ProseMirror contenteditable (the id is applied via editorProps.attributes);
- * `execCommand("insertText")` fires the beforeinput event ProseMirror needs to
- * update its document + the Svelte binding the send button reads.
+ * Append any `resource` / `resource_link` content blocks to a localStorage
+ * queue. Open WebUI's composer accepts plain text only, so resources can't ride
+ * the `deliverMessageToChat` path; instead a companion Open WebUI *filter*
+ * (inlet) reads this queue back on the next turn via an `execute` event call and
+ * injects each resource into `body.metadata.files` as full-context text. Returns
+ * the number of blocks queued.
  */
-function deliverMessageToChat(text: string): boolean {
-  const input = document.getElementById("chat-input");
-  if (!input || !text) return false;
-  input.focus();
-  const ok = document.execCommand("insertText", false, text);
-  if (!ok) {
-    // Fallback for engines that ignore execCommand on contenteditable.
+function queueResources(content: unknown): number {
+  if (!Array.isArray(content)) return 0;
+  const blocks = content.filter(
+    (b) =>
+      !!b &&
+      typeof b === "object" &&
+      ((b as { type?: unknown }).type === "resource" ||
+        (b as { type?: unknown }).type === "resource_link"),
+  );
+  if (blocks.length === 0) return 0;
+  try {
+    const raw = localStorage.getItem(RESOURCE_QUEUE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    const queue = Array.isArray(parsed) ? parsed : [];
+    for (const b of blocks) queue.push(b);
+    localStorage.setItem(RESOURCE_QUEUE_KEY, JSON.stringify(queue));
+  } catch (e) {
+    console.warn("[mcp-app-bridge] failed to queue resource(s):", e);
+    return 0;
+  }
+  return blocks.length;
+}
+
+/**
+ * Insert text into the ProseMirror composer. A synthetic `paste` event is
+ * preferred: ProseMirror's paste path inserts text atomically and does *not*
+ * run input rules, so smart-typography transforms (e.g. `...` -> ellipsis) can
+ * never fire and mis-map positions (`RangeError: Position … out of range`).
+ * `execCommand`/`beforeinput` are guarded fallbacks for engines that ignore the
+ * synthetic paste, so nothing ever throws uncaught.
+ */
+function insertComposerText(input: HTMLElement, text: string): void {
+  try {
+    const data = new DataTransfer();
+    data.setData("text/plain", text);
+    const pasted = !input.dispatchEvent(
+      new ClipboardEvent("paste", {
+        clipboardData: data,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    // dispatchEvent returns false when a listener called preventDefault, i.e.
+    // ProseMirror handled the paste — we're done.
+    if (pasted) return;
+  } catch {
+    // Fall through to the legacy insertion paths below.
+  }
+  try {
+    if (document.execCommand("insertText", false, text)) return;
+  } catch {
+    // execCommand can throw on some contenteditable/ProseMirror states.
+  }
+  try {
     input.dispatchEvent(
       new InputEvent("beforeinput", {
         inputType: "insertText",
@@ -109,7 +183,21 @@ function deliverMessageToChat(text: string): boolean {
         cancelable: true,
       }),
     );
+  } catch {
+    // Last-resort path; nothing more to try.
   }
+}
+
+/**
+ * Inject text into Open WebUI's chat composer and submit it, so an app's
+ * `app.sendMessage(...)` appears as a real user turn. `#chat-input` is the
+ * ProseMirror contenteditable (the id is applied via editorProps.attributes).
+ */
+function deliverMessageToChat(text: string): boolean {
+  const input = document.getElementById("chat-input");
+  if (!input || !text) return false;
+  input.focus();
+  insertComposerText(input, text);
   // Let ProseMirror's onUpdate propagate to the bound prompt (which gates the
   // send button's disabled state) before clicking it.
   setTimeout(() => {
@@ -175,17 +263,45 @@ async function attachBridge(iframe: HTMLIFrameElement, cfg: BridgeConfig) {
     return {};
   };
   bridge.onmessage = async (params) => {
-    const text = messageText((params as { content?: unknown }).content);
-    const delivered = deliverMessageToChat(text);
-    if (!delivered) {
+    const content = (params as { content?: unknown }).content;
+    // Resource blocks are staged for the inlet filter; text rides the composer.
+    const queued = queueResources(content);
+    const text = messageText(content);
+    if (text) {
+      if (!deliverMessageToChat(text)) {
+        console.warn(
+          "[mcp-app-bridge] could not deliver message to chat (no #chat-input or empty text):",
+          params,
+        );
+      }
+    } else if (queued === 0) {
       console.warn(
-        "[mcp-app-bridge] could not deliver message to chat (no #chat-input or empty text):",
+        "[mcp-app-bridge] message had no text or resource blocks to deliver:",
         params,
       );
     }
     return {};
   };
-  bridge.onupdatemodelcontext = async () => ({});
+  bridge.onupdatemodelcontext = async (params) => {
+    // Treated identically to sendMessage: deliver text to the chat immediately
+    // rather than deferring; resource blocks are staged for the inlet filter.
+    const queued = queueResources((params as { content?: unknown }).content);
+    const text = extractContextText(params);
+    if (text) {
+      if (!deliverMessageToChat(text)) {
+        console.warn(
+          "[mcp-app-bridge] could not deliver model context to chat (no #chat-input or empty text):",
+          params,
+        );
+      }
+    } else if (queued === 0) {
+      console.warn(
+        "[mcp-app-bridge] model context had no text or resource blocks:",
+        params,
+      );
+    }
+    return {};
+  };
   bridge.onloggingmessage = (p) => console.info("[mcp-app-bridge] log:", p);
   bridge.onsizechange = async ({ height }) => {
     if (typeof height === "number") iframe.style.height = `${height}px`;
@@ -243,4 +359,4 @@ observer.observe(document.documentElement, {
 
 scan(document);
 
-console.log("??????????");
+console.log('&&&&&&&&')
