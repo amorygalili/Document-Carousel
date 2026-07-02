@@ -7,15 +7,13 @@ description: >
   Companion filter for the mcp-app-bridge loader. MCP Apps cannot push
   `resource` content blocks (from app.sendMessage / app.updateModelContext)
   through Open WebUI's text-only composer, so the loader stages them in the
-  browser's localStorage. This filter's outlet drains that queue after the
-  model responds via an `execute` event call and appends a JSON dump of the
-  resources to the latest USER message's content. Open WebUI persists outlet
-  content changes to the chat record and the frontend re-sends the full message
-  history every turn, so the resources become durable context the model sees on
-  every subsequent turn. The user message is targeted (not the assistant
-  response) because Open WebUI rebuilds assistant messages from their structured
-  `output` items for the LLM and discards assistant `content`; user messages
-  have no `output`, so their content always reaches the model verbatim.
+  browser's localStorage. This filter's inlet drains that queue before the
+  model is called via an `execute` event call and appends a JSON dump of the
+  resources to the latest USER message's content, so the model sees the
+  resources in the current turn. The user message is targeted because Open
+  WebUI rebuilds assistant messages from their structured `output` items for
+  the LLM and discards assistant `content`; user messages have no `output`,
+  so their content always reaches the model verbatim.
 """
 
 import base64
@@ -35,7 +33,7 @@ RESOURCE_QUEUE_KEY = "mcp-app-bridge:resource-queue"
 _READ_AND_CLEAR_JS = (
     "const k = %s;"
     "const v = localStorage.getItem(k);"
-    "localStorage.removeItem(k);"
+    # "localStorage.removeItem(k);"
     "return v;"
 ) % json.dumps(RESOURCE_QUEUE_KEY)
 
@@ -83,10 +81,6 @@ def _resource_to_text(block: dict) -> tuple[str, str]:
     return name, f"[Resource] URI: {uri} ({mime or 'unknown type'})"
 
 
-# Marker wrapping the appended JSON dump in the assistant message content.
-# Kept distinctive so the block is easy to recognize in the transcript.
-_RESOURCE_SUMMARY = "MCP App resources"
-
 
 class Filter:
     class Valves(BaseModel):
@@ -95,7 +89,7 @@ class Filter:
         )
         enabled: bool = Field(
             default=True,
-            description="Append staged MCP App resources to the assistant message.",
+            description="Append staged MCP App resources to the user message before the model is called.",
         )
         max_resources: int = Field(
             default=20, description="Maximum resources to append per turn."
@@ -104,14 +98,11 @@ class Filter:
     def __init__(self):
         self.valves = self.Valves()
 
-    async def outlet(
+    async def _get_blocks(
         self,
-        body: dict,
         __event_call__: Optional[Callable[[dict], Awaitable[Any]]] = None,
-    ) -> dict:
-        if not self.valves.enabled or __event_call__ is None:
-            return body
-
+    ) -> list:
+       
         # Pull (and clear) the queued resources from the user's browser tab.
         try:
             raw = await __event_call__(
@@ -119,42 +110,48 @@ class Filter:
             )
         except Exception as e:
             log.debug(f"resource-context: event_call failed: {e}")
-            return body
+            return []
 
         # event_caller returns {'error': ...} on disconnect/timeout; ignore.
         if not isinstance(raw, str) or not raw.strip():
-            return body
+            return []
         try:
             blocks = json.loads(raw)
         except Exception:
-            return body
+            return []
         if not isinstance(blocks, list) or not blocks:
-            return body
-
-        items = []
+            return []
+        
+        return blocks
+    
+    def _to_content_blocks(self, blocks: list) -> list:
+        new_blocks = []
         for block in blocks[: max(0, self.valves.max_resources)]:
             if not isinstance(block, dict):
                 continue
             try:
-                name, content = _resource_to_text(block)
+                name, text = _resource_to_text(block)
             except Exception:
                 continue
-            if not content:
+            if not text:
                 continue
-            items.append({"name": name, "content": content})
+            new_blocks.append({"type": "text", "text": f"[{name}]\n{text}"})
+        return new_blocks
 
-        if not items:
+    async def inlet(
+        self,
+        body: dict,
+        __event_call__: Optional[Callable[[dict], Awaitable[Any]]] = None,
+    ) -> dict:
+        if not self.valves.enabled or __event_call__ is None:
             return body
 
-        # Append the JSON dump to the most recent USER message's content. The
-        # middleware persists this content change and the frontend syncs it, so
-        # the resources ride along in the history on every subsequent turn.
-        #
-        # The user message is targeted (not the assistant response) because
-        # Open WebUI rebuilds assistant messages from their structured `output`
-        # items for the LLM (process_messages_with_output) and discards anything
-        # appended to assistant `content`. User messages have no `output`, so
-        # their content is always sent to the model verbatim.
+        blocks = await self._get_blocks(__event_call__)
+        new_blocks = self._to_content_blocks(blocks)
+        
+        if not new_blocks:
+            return body
+
         messages = body.get("messages")
         if not isinstance(messages, list) or not messages:
             return body
@@ -170,10 +167,13 @@ class Filter:
         if target is None:
             return body
 
-        dump = json.dumps(items, ensure_ascii=False, indent=2)
-        block = (
-            f"\n\n<details>\n<summary>{_RESOURCE_SUMMARY}</summary>\n\n"
-            f"```json\n{dump}\n```\n</details>"
-        )
-        target["content"] = (target.get("content") or "") + block
+        existing = target.get("content") or ""
+        if isinstance(existing, str):
+            content_list = [{"type": "text", "text": existing}] if existing else []
+        elif isinstance(existing, list):
+            content_list = list(existing)
+        else:
+            content_list = []
+
+        target["content"] = content_list + new_blocks
         return body
