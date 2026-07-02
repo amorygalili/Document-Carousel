@@ -1,0 +1,8 @@
+{
+    "mcpServers": {
+        "auggie": {
+            "type": "http",
+            "url": "https://api.augmentcode.com/mcp"
+        }
+    }
+}
